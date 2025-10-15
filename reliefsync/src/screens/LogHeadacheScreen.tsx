@@ -10,8 +10,8 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme, Text, Screen } from '../theme';
-import { useEpisodesStore } from '../store/episodes';
-import { useHabitsStore } from '../store/habits';
+import { useEpisodesFirebaseStore } from '../store/episodes-firebase';
+import { useHabitsFirebaseStore } from '../store/habits-firebase';
 import { CTAButton } from '../components/CTAButton';
 import { SliderRow } from '../components/SliderRow';
 import { ToggleRow } from '../components/ToggleRow';
@@ -21,8 +21,8 @@ import type { HeadacheLocation, HeadacheQuality, Trigger } from '../types/episod
 
 export const LogHeadacheScreen: React.FC = () => {
   const theme = useTheme();
-  const { addHeadacheEpisode } = useEpisodesStore();
-  const { getLogForDate } = useHabitsStore();
+  const { addEpisode } = useEpisodesFirebaseStore();
+  const { getLogForDate } = useHabitsFirebaseStore();
 
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -30,7 +30,7 @@ export const LogHeadacheScreen: React.FC = () => {
 
   // Basic fields
   const [startTime, setStartTime] = useState(new Date());
-  const [durationMin, setDurationMin] = useState(2); // 0-24 hours, slider 0-10 maps to hours
+  const [durationMin, setDurationMin] = useState(2);
   const [intensity, setIntensity] = useState(5);
   const [location, setLocation] = useState<HeadacheLocation[]>([]);
   const [quality, setQuality] = useState<HeadacheQuality[]>([]);
@@ -119,25 +119,40 @@ export const LogHeadacheScreen: React.FC = () => {
 
     setSaving(true);
     try {
-      await addHeadacheEpisode({
+      // Build the episode object with required fields
+      const episode: any = {
         startTime: startTime.toISOString(),
-        durationMin: durationMin * 60, // Convert hours to minutes
+        durationMin: durationMin * 60,
         intensity,
         location,
         quality,
         triggers,
         usedDevice,
-        deviceMode: usedDevice ? deviceMode : undefined,
-        deviceDuration: usedDevice ? deviceDuration : undefined,
-        deviceTemp: usedDevice ? deviceTemp : undefined,
-        devicePressure: usedDevice ? devicePressure : undefined,
-        devicePattern: usedDevice ? devicePattern : undefined,
-        deviceEffectiveness: usedDevice ? deviceEffectiveness : undefined,
-        deviceNotes: usedDevice && deviceNotes ? deviceNotes : undefined,
         barometricPressure: baroData.hPa,
         habitLogAttached,
-        notes: notes.trim() || undefined,
-      });
+      };
+
+      // Only add device fields if device was used
+      if (usedDevice) {
+        episode.deviceMode = deviceMode;
+        episode.deviceDuration = deviceDuration;
+        episode.deviceTemp = deviceTemp;
+        episode.devicePressure = devicePressure;
+        episode.devicePattern = devicePattern;
+        episode.deviceEffectiveness = deviceEffectiveness;
+        
+        // Only add device notes if they exist
+        if (deviceNotes.trim()) {
+          episode.deviceNotes = deviceNotes.trim();
+        }
+      }
+
+      // Only add notes if they exist
+      if (notes.trim()) {
+        episode.notes = notes.trim();
+      }
+
+      await addEpisode(episode);
 
       Alert.alert('Success', 'Headache episode saved!');
 
@@ -273,7 +288,7 @@ export const LogHeadacheScreen: React.FC = () => {
             label="Duration"
             sublabel={`${durationMin} hours`}
             value={durationMin}
-            onChange={(val) => setDurationMin(Math.round(val * 2.4))} // Map 0-10 to 0-24
+            onChange={(val) => setDurationMin(Math.round(val * 2.4))}
           />
         </View>
 

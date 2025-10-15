@@ -5,16 +5,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  Dimensions,
   Alert,
 } from 'react-native';
-import { Svg } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, Text, Screen } from '../theme';
-import { useEpisodesStore } from '../store/episodes';
-import { useHabitsStore } from '../store/habits';
+import { useEpisodesFirebaseStore } from '../store/episodes-firebase';
+import { useHabitsFirebaseStore } from '../store/habits-firebase';
 import { CTAButton } from '../components/CTAButton';
-import { StatPill } from '../components/StatPill';
 import { generateDemoEpisodes, generateDemoHabits, getDemoDataSummary } from '../data/seed';
 import type { HeadacheEpisode } from '../types/episode';
 import type { HabitLog } from '../types/habit';
@@ -37,13 +34,18 @@ interface TriggerAnalysis {
 export const InsightsScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation();
+  
   const {
-    headacheEpisodes,
-    getAllHeadacheEpisodes,
-    addHeadacheEpisode,
-    initialize: initEpisodes,
-  } = useEpisodesStore();
-  const { getAllLogs, addHabitLog, initialize: initHabits } = useHabitsStore();
+    episodes,
+    getAllEpisodes,
+    addEpisode,
+  } = useEpisodesFirebaseStore();
+  
+  const { 
+    logs,
+    getAllLogs, 
+    addHabitLog 
+  } = useHabitsFirebaseStore();
 
   const [weeklyData, setWeeklyData] = useState<DayData[]>([]);
   const [monthlyData, setMonthlyData] = useState<DayData[]>([]);
@@ -54,34 +56,25 @@ export const InsightsScreen: React.FC = () => {
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerAnalysis | null>(null);
 
   useEffect(() => {
-    initEpisodes();
-    initHabits();
-  }, []);
-
-  useEffect(() => {
-    if (headacheEpisodes.length > 0) {
+    if (episodes.length > 0) {
       analyzeData();
     }
-  }, [headacheEpisodes]);
+  }, [episodes, logs]);
 
   const analyzeData = () => {
-    const episodes = getAllHeadacheEpisodes();
+    const allEpisodes = getAllEpisodes();
     const habitLogs = getAllLogs();
 
-    // Weekly data (last 7 days)
-    const weekly = generateDayData(episodes, 7);
+    const weekly = generateDayData(allEpisodes, 7);
     setWeeklyData(weekly);
 
-    // Monthly data (last 30 days)
-    const monthly = generateDayData(episodes, 30);
+    const monthly = generateDayData(allEpisodes, 30);
     setMonthlyData(monthly);
 
-    // Top triggers
-    const triggers = analyzeTriggers(episodes, habitLogs);
+    const triggers = analyzeTriggers(allEpisodes, habitLogs);
     setTopTriggers(triggers.slice(0, 3));
 
-    // Generate suggestions
-    const sug = generateSuggestions(episodes, habitLogs);
+    const sug = generateSuggestions(allEpisodes, habitLogs);
     setSuggestions(sug);
   };
 
@@ -151,7 +144,6 @@ export const InsightsScreen: React.FC = () => {
   const generateSuggestions = (episodes: HeadacheEpisode[], habitLogs: HabitLog[]): string[] => {
     const suggestions: string[] = [];
 
-    // Check barometric + humidity correlation
     const lowPressureEpisodes = episodes.filter((e) => (e.barometricPressure || 1013) < 1000);
     if (lowPressureEpisodes.length > 2) {
       suggestions.push(
@@ -159,7 +151,6 @@ export const InsightsScreen: React.FC = () => {
       );
     }
 
-    // Check caffeine timing (from habit logs)
     const lateCaffeineCount = habitLogs.filter((log) => log.caffeine !== 'None').length;
     if (lateCaffeineCount > 5) {
       suggestions.push(
@@ -167,11 +158,10 @@ export const InsightsScreen: React.FC = () => {
       );
     }
 
-    // Check skipped meals
     const skippedMealsEpisodes = episodes.filter((e) => e.triggers.includes('Skipped meal'));
     if (skippedMealsEpisodes.length > 2) {
       suggestions.push(
-        '🍎 Skipped meals often precede episodes. Keep a backup snack and water bottle handy.',
+        '🎯 Skipped meals often precede episodes. Keep a backup snack and water bottle handy.',
       );
     }
 
@@ -197,7 +187,7 @@ export const InsightsScreen: React.FC = () => {
               const demoHabits = generateDemoHabits();
 
               for (const episode of demoEpisodes) {
-                await addHeadacheEpisode(episode);
+                await addEpisode(episode);
               }
 
               for (const habit of demoHabits) {
@@ -209,9 +199,6 @@ export const InsightsScreen: React.FC = () => {
                 'Demo Data Loaded',
                 `Added ${summary.episodes} episodes and ${summary.habits} habit logs.\n\nAvg Intensity: ${summary.avgIntensity}/10\nDevice Usage: ${summary.deviceUsage}`,
               );
-
-              // Refresh data
-              analyzeData();
             } catch (error) {
               console.error('Failed to load demo data:', error);
               Alert.alert('Error', 'Failed to load demo data. Please try again.');

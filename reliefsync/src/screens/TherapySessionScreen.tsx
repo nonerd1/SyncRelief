@@ -4,9 +4,8 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, Text, Screen } from '../theme';
 import { useSessionStore } from '../store/session';
-import { useEpisodesStore } from '../store/episodes';
+import { useEpisodesFirebaseStore } from '../store/episodes-firebase';
 import { CTAButton } from '../components/CTAButton';
-import { StatPill } from '../components/StatPill';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { SliderRow } from '../components/SliderRow';
 import { ToggleRow } from '../components/ToggleRow';
@@ -48,7 +47,7 @@ export const TherapySessionScreen: React.FC = () => {
     resetElapsed,
   } = useSessionStore();
 
-  const { addEpisode } = useEpisodesStore();
+  const { addEpisode } = useEpisodesFirebaseStore();
 
   const [baroData, setBaroData] = useState<{ hPa: number; label: string; trend: 'rising' | 'falling' | 'steady' }>({ 
     hPa: 1013, 
@@ -80,7 +79,6 @@ export const TherapySessionScreen: React.FC = () => {
   // Check if session >= 10 min to show rating
   useEffect(() => {
     if (sessionActive && elapsedSec >= 600 && elapsedSec % 60 === 0) {
-      // Check every minute after 10 min threshold
       setShowRatingModal(true);
       pauseSession();
     }
@@ -96,19 +94,22 @@ export const TherapySessionScreen: React.FC = () => {
   const handleSaveRating = async () => {
     try {
       await addEpisode({
-        date: new Date().toISOString().split('T')[0],
-        severity: 0,
-        duration: Math.floor(elapsedSec / 60),
-        location: 'front',
+        startTime: new Date().toISOString(),
+        durationMin: Math.floor(elapsedSec / 60),
+        intensity: 0,
+        location: [],
+        quality: [],
         triggers: [],
-        notes: `Device session: ${mode}`,
+        usedDevice: true,
+        deviceMode: mode,
+        deviceDuration: Math.floor(elapsedSec / 60),
+        deviceTemp: temperatureC,
+        devicePressure: pressure,
+        devicePattern: massagePattern,
+        deviceEffectiveness: effectiveness,
+        deviceNotes: effectivenessNotes.trim() || undefined,
         barometricPressure: baroData.hPa,
-        deviceEffectiveness: {
-          rating: effectiveness,
-          notes: effectivenessNotes,
-          sessionDuration: elapsedSec,
-          mode,
-        },
+        notes: `Device session: ${mode}`,
       });
 
       setShowRatingModal(false);
@@ -252,7 +253,7 @@ export const TherapySessionScreen: React.FC = () => {
                 key={modeName}
                 style={[
                   styles.modeCard,
-                  index === 4 && styles.modeCardLast, // Custom card centered
+                  index === 4 && styles.modeCardLast,
                   {
                     backgroundColor:
                       mode === modeName ? theme.colors.rsPrimary : theme.colors.rsSurface,
@@ -485,7 +486,6 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 24,
   },
-  // Info cards at top
   infoCardsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -508,7 +508,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-  // Duration selector
   section: {
     gap: 12,
   },
@@ -524,7 +523,6 @@ const styles = StyleSheet.create({
     gap: 4,
     minHeight: 80,
   },
-  // Mode cards
   modeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -549,7 +547,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
   },
-  // Advanced settings
   advancedHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -577,7 +574,6 @@ const styles = StyleSheet.create({
   togglesRow: {
     gap: 0,
   },
-  // Safety card
   safetyCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -589,7 +585,6 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 18,
   },
-  // Footer
   bottomSpacer: {
     height: 80,
   },
@@ -614,7 +609,6 @@ const styles = StyleSheet.create({
   flexButton: {
     flex: 1,
   },
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
@@ -657,4 +651,3 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
-

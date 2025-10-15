@@ -2,14 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme, Text, Screen } from '../theme';
-import { useHabitsStore } from '../store/habits';
+import { useHabitsFirebaseStore } from '../store/habits-firebase';
 import { CTAButton } from '../components/CTAButton';
 import { getBarometricSnapshot } from '../lib/baro';
 import type { HabitLog } from '../types/habit';
 
 export const LogHabitsScreen: React.FC = () => {
   const theme = useTheme();
-  const { addHabitLog, getLogForDate, getAllLogs, initialize } = useHabitsStore();
+  const { addHabitLog, getLogForDate } = useHabitsFirebaseStore();
 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [saving, setSaving] = useState(false);
@@ -45,7 +45,6 @@ export const LogHabitsScreen: React.FC = () => {
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    initialize();
     loadBaroData();
   }, []);
 
@@ -61,7 +60,6 @@ export const LogHabitsScreen: React.FC = () => {
   const loadLogForDate = (date: string) => {
     const log = getLogForDate(date);
     if (log) {
-      // Populate form with existing log
       setSugar(log.sugar);
       setStarch(log.starch);
       setDairy(log.dairy);
@@ -103,6 +101,7 @@ export const LogHabitsScreen: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Build log object, only including optional fields if they have values
       const log: Omit<HabitLog, 'id' | 'timestamp'> = {
         date: selectedDate,
         sugar,
@@ -115,13 +114,23 @@ export const LogHabitsScreen: React.FC = () => {
         sleepQuality,
         stress,
         exercise,
-        exerciseIntensity: exercise ? exerciseIntensity : undefined,
         barometricPressure: baroData.hPa,
         weather,
         menstruation,
-        menstruationPhase: menstruation ? menstruationPhase : undefined,
-        notes: notes.trim() || undefined,
       };
+
+      // Only add optional fields if they have meaningful values
+      if (exercise && exerciseIntensity) {
+        log.exerciseIntensity = exerciseIntensity;
+      }
+      
+      if (menstruation && menstruationPhase) {
+        log.menstruationPhase = menstruationPhase;
+      }
+      
+      if (notes.trim()) {
+        log.notes = notes.trim();
+      }
 
       await addHabitLog(log);
       Alert.alert('Success', 'Habit log saved!');
@@ -140,7 +149,6 @@ export const LogHabitsScreen: React.FC = () => {
 
     const yesterdayLog = getLogForDate(yesterdayStr);
     if (yesterdayLog) {
-      // Prefill with yesterday's data
       setSugar(yesterdayLog.sugar);
       setStarch(yesterdayLog.starch);
       setDairy(yesterdayLog.dairy);
@@ -795,7 +803,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
-  // Option cards (3-4 options per row)
   optionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -813,7 +820,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
-  // Toggle cards (2 per row, with icons)
   toggleGrid: {
     flexDirection: 'row',
     gap: 8,
@@ -832,7 +838,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
-  // Number cards (for hours, stress levels)
   numberGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -853,7 +858,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 4,
   },
-  // Checkbox card
   checkboxCard: {
     padding: 16,
   },
@@ -869,7 +873,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Barometric info
   baroCard: {
     padding: 12,
   },
@@ -878,7 +881,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  // Notes
   notesInput: {
     minHeight: 100,
     borderWidth: 1,

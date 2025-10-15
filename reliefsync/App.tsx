@@ -5,9 +5,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ThemeProvider, useTheme } from './src/theme';
+import { useAuthStore } from './src/store/auth';
 import { useSessionStore } from './src/store/session';
-import { useHabitsStore } from './src/store/habits';
-import { useEpisodesStore } from './src/store/episodes';
+import { useEpisodesFirebaseStore } from './src/store/episodes-firebase';
+import { useHabitsFirebaseStore } from './src/store/habits-firebase';
 
 // Screens
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -15,10 +16,15 @@ import { TherapySessionScreen } from './src/screens/TherapySessionScreen';
 import { LogHabitsScreen } from './src/screens/LogHabitsScreen';
 import { LogHeadacheScreen } from './src/screens/LogHeadacheScreen';
 import { InsightsScreen } from './src/screens/InsightsScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 
 const Tab = createBottomTabNavigator();
 const HomeStack = createNativeStackNavigator();
+const AuthStack = createNativeStackNavigator();
 
+// ============================================
+// Home Stack Navigator
+// ============================================
 function HomeStackNavigator() {
   return (
     <HomeStack.Navigator
@@ -32,6 +38,9 @@ function HomeStackNavigator() {
   );
 }
 
+// ============================================
+// Main App Navigator (Logged In)
+// ============================================
 function AppNavigator() {
   const theme = useTheme();
 
@@ -103,7 +112,9 @@ function AppNavigator() {
             name="Home"
             component={HomeStackNavigator}
             options={{
-              tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />,
+              tabBarIcon: ({ color, size }) => (
+                <Feather name="home" size={size} color={color} />
+              ),
               tabBarLabel: 'Home',
               headerShown: false,
             }}
@@ -146,22 +157,100 @@ function AppNavigator() {
   );
 }
 
+// ============================================
+// Auth Navigator (Logged Out)
+// ============================================
+function AuthNavigator() {
+  return (
+    <NavigationContainer>
+      <AuthStack.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
+        <AuthStack.Screen name="Login" component={LoginScreen} />
+      </AuthStack.Navigator>
+    </NavigationContainer>
+  );
+}
+
+// ============================================
+// App Initializer - THE MAGIC HAPPENS HERE
+// ============================================
 function AppInitializer() {
+  const user = useAuthStore((state) => state.user);
+  const authLoading = useAuthStore((state) => state.loading);
+  const authInitialize = useAuthStore((state) => state.initialize);
+
   const sessionInitialize = useSessionStore((state) => state.initialize);
-  const habitsInitialize = useHabitsStore((state) => state.initialize);
-  const episodesInitialize = useEpisodesStore((state) => state.initialize);
 
+  // Firebase stores
+  const episodesSyncFirebase = useEpisodesFirebaseStore((state) => state.syncFromFirebase);
+  const episodesSubscribe = useEpisodesFirebaseStore((state) => state.subscribeToUpdates);
+  const episodesClear = useEpisodesFirebaseStore((state) => state.clear);
+
+  const habitsSyncFirebase = useHabitsFirebaseStore((state) => state.syncFromFirebase);
+  const habitsSubscribe = useHabitsFirebaseStore((state) => state.subscribeToUpdates);
+  const habitsClear = useHabitsFirebaseStore((state) => state.clear);
+
+  // Initialize Firebase auth
   useEffect(() => {
-    const init = async () => {
-      await Promise.all([sessionInitialize(), habitsInitialize(), episodesInitialize()]);
-    };
+    authInitialize();
+  }, [authInitialize]);
 
-    init();
-  }, []);
+  // When user logs in: sync all data from Firebase
+  useEffect(() => {
+    if (user) {
+      console.log('User logged in:', user.uid);
+
+      // Initialize local session store
+      sessionInitialize();
+
+      // Sync episodes from Firebase
+      episodesSyncFirebase();
+      const unsubscribeEpisodes = episodesSubscribe();
+
+      // Sync habits from Firebase
+      habitsSyncFirebase();
+      const unsubscribeHabits = habitsSubscribe();
+
+      // Cleanup subscriptions on logout
+      return () => {
+        unsubscribeEpisodes();
+        unsubscribeHabits();
+      };
+    } else {
+      // User logged out: clear all data
+      episodesClear();
+      habitsClear();
+    }
+  }, [
+    user,
+    sessionInitialize,
+    episodesSyncFirebase,
+    episodesSubscribe,
+    episodesClear,
+    habitsSyncFirebase,
+    habitsSubscribe,
+    habitsClear,
+  ]);
+
+  // Show loading state while auth initializing
+  if (authLoading) {
+    return null;
+  }
+
+  // Show auth flow or app based on user state
+  if (!user) {
+    return <AuthNavigator />;
+  }
 
   return <AppNavigator />;
 }
 
+// ============================================
+// Root App Component
+// ============================================
 export default function App() {
   return (
     <ThemeProvider>
