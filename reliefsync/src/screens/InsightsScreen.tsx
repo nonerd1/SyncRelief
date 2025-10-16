@@ -763,7 +763,7 @@ export const InsightsScreen: React.FC = () => {
         </View>
 
         {/* Dev-Only: Load Demo Data */}
-        {__DEV__ && (
+        {/* {__DEV__ && (
           <View style={styles.section}>
             <CTAButton
               variant="ghost"
@@ -772,7 +772,7 @@ export const InsightsScreen: React.FC = () => {
               fullWidth
             />
           </View>
-        )}
+        )} */}
 
         <View style={{ height: 20 }} />
       </ScrollView>
