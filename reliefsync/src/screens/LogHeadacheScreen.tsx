@@ -7,37 +7,49 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Modal,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Feather } from '@expo/vector-icons';
 import { useTheme, Text, Screen } from '../theme';
 import { useEpisodesFirebaseStore } from '../store/episodes-firebase';
 import { useHabitsFirebaseStore } from '../store/habits-firebase';
 import { CTAButton } from '../components/CTAButton';
-import { SliderRow } from '../components/SliderRow';
-import { ToggleRow } from '../components/ToggleRow';
-import { RatingBar } from '../components/RatingBar';
 import { getBarometricSnapshot } from '../lib/baro';
-import type { HeadacheLocation, HeadacheQuality, Trigger } from '../types/episode';
+import type { HeadacheLocation, HeadacheQuality, Trigger, HeadacheEpisode } from '../types/episode';
 
 export const LogHeadacheScreen: React.FC = () => {
   const theme = useTheme();
-  const { addEpisode } = useEpisodesFirebaseStore();
+  const { addEpisode, getAllEpisodes } = useEpisodesFirebaseStore();
   const { getLogForDate } = useHabitsFirebaseStore();
+  // const [baroData, setBaroData] = useState<number | null>(null);
+
 
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [todaysEpisodes, setTodaysEpisodes] = useState<HeadacheEpisode[]>([]);
+  const [selectedEpisode, setSelectedEpisode] = useState<HeadacheEpisode | null>(null);
 
-  // Basic fields
+  
+
+  const getLocalDateString = (date: Date) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().split('T')[0]; // returns 'YYYY-MM-DD'
+  };
+
+
+
   const [startTime, setStartTime] = useState(new Date());
-  const [durationMin, setDurationMin] = useState(2);
+  const [durationHours, setDurationHours] = useState(2);
   const [intensity, setIntensity] = useState(5);
   const [location, setLocation] = useState<HeadacheLocation[]>([]);
   const [quality, setQuality] = useState<HeadacheQuality[]>([]);
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [notes, setNotes] = useState('');
 
-  // Device usage
   const [usedDevice, setUsedDevice] = useState(false);
   const [deviceMode, setDeviceMode] = useState('Tension');
   const [deviceDuration, setDeviceDuration] = useState(20);
@@ -51,13 +63,55 @@ export const LogHeadacheScreen: React.FC = () => {
   const [habitLogAttached, setHabitLogAttached] = useState(false);
 
   useEffect(() => {
-    loadBaroData();
-  }, []);
+    loadTodaysEpisodes();
+}, []);
 
-  const loadBaroData = async () => {
-    const data = await getBarometricSnapshot();
-    setBaroData(data);
-  };
+const handleSaveEpisode = async (episode: HeadacheEpisode) => {
+  await addEpisode(episode);
+  await loadTodaysEpisodes(); // refresh list
+};
+
+
+  const loadTodaysEpisodes = async () => {
+  try {
+    const allEpisodes = await getAllEpisodes();
+
+    const now = new Date();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0
+    );
+    const todayEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999
+    );
+
+    // Filter all logs that happened today
+    const filtered = allEpisodes.filter((ep) => {
+      const epDate = new Date(ep.startTime);
+      return epDate >= todayStart && epDate <= todayEnd;
+    });
+
+    // Sort by newest first
+    filtered.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+    setTodaysEpisodes(filtered);
+  } catch (err) {
+    console.error('Error loading today’s logs:', err);
+  }
+};
+
+
 
   const getIntensityBadge = () => {
     if (intensity <= 3) return 'Mild';
@@ -71,35 +125,42 @@ export const LogHeadacheScreen: React.FC = () => {
     return theme.colors.rsAlert;
   };
 
+  const trackChange = () => {
+    setHasUnsavedChanges(true);
+  };
+
   const toggleLocation = (loc: HeadacheLocation) => {
     setLocation((prev) => (prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]));
+    trackChange();
   };
 
   const toggleQuality = (qual: HeadacheQuality) => {
     setQuality((prev) => (prev.includes(qual) ? prev.filter((q) => q !== qual) : [...prev, qual]));
+    trackChange();
   };
 
   const toggleTrigger = (trigger: Trigger) => {
     setTriggers((prev) =>
       prev.includes(trigger) ? prev.filter((t) => t !== trigger) : [...prev, trigger],
     );
+    trackChange();
   };
 
   const handleAttachHabitLog = () => {
-    const today = new Date(startTime).toISOString().split('T')[0];
-    const log = getLogForDate(today);
+    const dateStr = getLocalDateString(startTime);
+    const log = getLogForDate(dateStr);
 
     if (log) {
       setHabitLogAttached(true);
-      Alert.alert('Success', `Habit log for ${today} attached to this episode.`);
+      Alert.alert('Success', `Habit log for ${dateStr} attached to this episode.`);
     } else {
-      Alert.alert('No Habit Log', `No habit log found for ${today}.`);
+      Alert.alert('No Habit Log', `No habit log found for ${dateStr}.`);
     }
   };
 
   const resetForm = () => {
     setStartTime(new Date());
-    setDurationMin(2);
+    setDurationHours(2);
     setIntensity(5);
     setLocation([]);
     setQuality([]);
@@ -109,6 +170,7 @@ export const LogHeadacheScreen: React.FC = () => {
     setDeviceEffectiveness(5);
     setDeviceNotes('');
     setHabitLogAttached(false);
+    setHasUnsavedChanges(false);
   };
 
   const handleSave = async (addAnother: boolean = false) => {
@@ -119,10 +181,9 @@ export const LogHeadacheScreen: React.FC = () => {
 
     setSaving(true);
     try {
-      // Build the episode object with required fields
       const episode: any = {
         startTime: startTime.toISOString(),
-        durationMin: durationMin * 60,
+        durationMin: durationHours * 60, // Convert hours to minutes
         intensity,
         location,
         quality,
@@ -132,7 +193,6 @@ export const LogHeadacheScreen: React.FC = () => {
         habitLogAttached,
       };
 
-      // Only add device fields if device was used
       if (usedDevice) {
         episode.deviceMode = deviceMode;
         episode.deviceDuration = deviceDuration;
@@ -141,24 +201,28 @@ export const LogHeadacheScreen: React.FC = () => {
         episode.devicePattern = devicePattern;
         episode.deviceEffectiveness = deviceEffectiveness;
         
-        // Only add device notes if they exist
         if (deviceNotes.trim()) {
           episode.deviceNotes = deviceNotes.trim();
         }
       }
 
-      // Only add notes if they exist
       if (notes.trim()) {
         episode.notes = notes.trim();
       }
 
       await addEpisode(episode);
+      loadTodaysEpisodes();
 
-      Alert.alert('Success', 'Headache episode saved!');
-
-      if (addAnother) {
-        resetForm();
-      }
+      Alert.alert('Success', 'Headache episode saved successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (addAnother) {
+              resetForm();
+            }
+          },
+        },
+      ]);
     } catch (error) {
       console.error('Failed to save episode:', error);
       Alert.alert('Error', 'Failed to save episode. Please try again.');
@@ -167,174 +231,214 @@ export const LogHeadacheScreen: React.FC = () => {
     }
   };
 
-  const onDateChange = (_event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
     if (selectedDate) {
       const newDate = new Date(startTime);
       newDate.setFullYear(selectedDate.getFullYear());
       newDate.setMonth(selectedDate.getMonth());
       newDate.setDate(selectedDate.getDate());
       setStartTime(newDate);
+      trackChange();
     }
   };
 
-  const onTimeChange = (_event: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
+  const handleSelectEpisode = (episode: HeadacheEpisode) => {
+  setSelectedEpisode(episode);
+  setShowHistoryModal(false);
+
+  // Populate all form fields from the selected log
+  setStartTime(new Date(episode.startTime));
+  setDurationHours(episode.durationMin ? episode.durationMin / 60 : 2);
+  setIntensity(episode.intensity);
+  setLocation(episode.location || []);
+  setQuality(episode.quality || []);
+  setTriggers(episode.triggers || []);
+  setUsedDevice(!!episode.usedDevice);
+  setDeviceMode(episode.deviceMode || 'Tension');
+  setDeviceDuration(episode.deviceDuration || 20);
+  setDeviceTemp(episode.deviceTemp || 30);
+  setDevicePressure(episode.devicePressure || 5);
+  setDevicePattern(episode.devicePattern || 'Wave');
+  setDeviceEffectiveness(episode.deviceEffectiveness || 5);
+  setDeviceNotes(episode.deviceNotes || '');
+  setNotes(episode.notes || '');
+  setHabitLogAttached(!!episode.habitLogAttached);
+
+  setHasUnsavedChanges(false);
+};
+
+
+
+  const handleTimeChange = (event: any, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowTimePicker(false);
+    }
+    
     if (selectedTime) {
       const newTime = new Date(startTime);
       newTime.setHours(selectedTime.getHours());
       newTime.setMinutes(selectedTime.getMinutes());
       setStartTime(newTime);
+      trackChange();
     }
   };
 
-  const locationOptions: HeadacheLocation[] = [
-    'Frontal',
-    'Temporal',
-    'Occipital',
-    'Diffuse',
-    'One-sided',
-  ];
+  const formatEpisodeTime = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const locationOptions: HeadacheLocation[] = ['Frontal', 'Temporal', 'Occipital', 'Diffuse', 'One-sided'];
   const qualityOptions: HeadacheQuality[] = ['Throbbing', 'Pressure', 'Sharp', 'Dull', 'Aura'];
-  const triggerOptions: Trigger[] = [
-    'Sugar',
-    'Caffeine',
-    'Starch',
-    'Dairy',
-    'Skipped meal',
-    'Stress',
-    'Sleep loss',
-    'Barometric',
-    'Dehydration',
-    'Hormonal',
-    'Screen time',
-    'Other',
-  ];
+  const triggerOptions: Trigger[] = ['Sugar', 'Caffeine', 'Starch', 'Dairy', 'Skipped meal', 'Stress', 'Sleep loss', 'Barometric', 'Dehydration', 'Hormonal', 'Screen time', 'Other'];
 
   return (
     <Screen>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {/* Date/Time Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Text variant="Title" style={styles.sectionTitle}>
-            📅 When
-          </Text>
+        {/* Header */}
+        <View style={[styles.header, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.headerContent}>
+            <View style={{ flex: 1 }}>
+              <Text variant="Caption" color={theme.colors.rsTextDim}>Recording Episode</Text>
+              <Text variant="H2" style={styles.headerTitle}>Log Headache</Text>
+            </View>
+            <View style={styles.headerRight}>
+              {todaysEpisodes.length > 0 && (
+  <TouchableOpacity
+    style={[styles.historyButton, { backgroundColor: theme.colors.rsBg, borderRadius: theme.radius.md }]}
+    onPress={() => setShowHistoryModal(true)}
+  >
+    <Feather name="list" size={18} color={theme.colors.rsPrimary} />
+    <Text variant="Caption" color={theme.colors.rsPrimary} style={styles.historyCount}>
+      {todaysEpisodes.length}
+    </Text>
+  </TouchableOpacity>
+)}
 
-          <View style={styles.dateTimeRow}>
+              {hasUnsavedChanges && (
+                <View style={[styles.unsavedBadge, { backgroundColor: theme.colors.rsWarn + '20' }]}>
+                  <Feather name="alert-circle" size={14} color={theme.colors.rsWarn} />
+                  <Text variant="Caption" color={theme.colors.rsWarn}>Unsaved</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* Date/Time Section */}
+        <View style={[styles.section, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.sectionHeader}>
+            <Feather name="calendar" size={20} color={theme.colors.rsPrimary} />
+            <Text variant="Title">Date & Time</Text>
+          </View>
+
+          <View style={styles.dateTimeGrid}>
             <TouchableOpacity
-              style={[
-                styles.dateTimeButton,
-                {
-                  backgroundColor: theme.colors.rsBg,
-                  borderColor: theme.colors.rsBorder,
-                  borderRadius: theme.radius.sm,
-                },
-              ]}
+              style={[styles.dateTimeCard, { backgroundColor: theme.colors.rsBg, borderColor: theme.colors.rsBorder, borderRadius: theme.radius.md }]}
               onPress={() => setShowDatePicker(true)}
             >
-              <Text variant="Body">
-                {startTime.toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </Text>
+              <Feather name="calendar" size={18} color={theme.colors.rsTextDim} />
+              <View style={styles.dateTimeInfo}>
+                <Text variant="Caption" color={theme.colors.rsTextDim}>Date</Text>
+                <Text variant="Body" color={theme.colors.rsText} style={styles.dateTimeValue}>
+                  {startTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[
-                styles.dateTimeButton,
-                {
-                  backgroundColor: theme.colors.rsBg,
-                  borderColor: theme.colors.rsBorder,
-                  borderRadius: theme.radius.sm,
-                },
-              ]}
+              style={[styles.dateTimeCard, { backgroundColor: theme.colors.rsBg, borderColor: theme.colors.rsBorder, borderRadius: theme.radius.md }]}
               onPress={() => setShowTimePicker(true)}
             >
-              <Text variant="Body">
-                {startTime.toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
-              </Text>
+              <Feather name="clock" size={18} color={theme.colors.rsTextDim} />
+              <View style={styles.dateTimeInfo}>
+                <Text variant="Caption" color={theme.colors.rsTextDim}>Time</Text>
+                <Text variant="Body" color={theme.colors.rsText} style={styles.dateTimeValue}>
+                  {startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
 
-          {showDatePicker && (
-            <DateTimePicker
-              value={startTime}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={onDateChange}
-            />
-          )}
-
-          {showTimePicker && (
-            <DateTimePicker
-              value={startTime}
-              mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={onTimeChange}
-            />
-          )}
-
-          <SliderRow
-            label="Duration"
-            sublabel={`${durationMin} hours`}
-            value={durationMin}
-            onChange={(val) => setDurationMin(Math.round(val * 2.4))}
-          />
+          <View style={styles.field}>
+            <Text variant="Body" color={theme.colors.rsText} style={styles.fieldLabel}>
+              Duration: {durationHours} {durationHours === 1 ? 'hour' : 'hours'}
+            </Text>
+            <View style={styles.durationGrid}>
+              {[0.5, 1, 2, 4, 6, 8, 12].map((hours) => (
+                <TouchableOpacity
+                  key={hours}
+                  style={[
+                    styles.durationOption,
+                    {
+                      backgroundColor: durationHours === hours ? theme.colors.rsPrimary : 'transparent',
+                      borderRadius: theme.radius.md,
+                      borderWidth: 1.5,
+                      borderColor: durationHours === hours ? theme.colors.rsPrimary : theme.colors.rsBorder,
+                    },
+                  ]}
+                  onPress={() => { setDurationHours(hours); trackChange(); }}
+                  activeOpacity={0.7}
+                >
+                  <Text variant="Body" color={durationHours === hours ? theme.colors.rsBg : theme.colors.rsText} style={styles.durationText}>
+                    {hours}h
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
-        {/* Intensity Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <View style={styles.intensityHeader}>
-            <Text variant="Title">🔥 Intensity</Text>
-            <View
-              style={[
-                styles.badge,
-                {
-                  backgroundColor: getBadgeColor(),
-                  borderRadius: theme.radius.pill,
-                },
-              ]}
-            >
-              <Text variant="Caption" color={theme.colors.rsBg} style={styles.badgeText}>
-                {getIntensityBadge()}
-              </Text>
+        {/* Intensity */}
+        <View style={[styles.section, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.sectionHeader}>
+            <Feather name="zap" size={20} color={theme.colors.rsPrimary} />
+            <Text variant="Title">Pain Intensity</Text>
+            <View style={[styles.badge, { backgroundColor: getBadgeColor(), borderRadius: theme.radius.pill, marginLeft: 'auto' }]}>
+              <Text variant="Caption" color={theme.colors.rsBg} style={styles.badgeText}>{getIntensityBadge()}</Text>
             </View>
           </View>
 
-          <SliderRow
-            label="Pain Level"
-            sublabel={`${intensity}/10`}
-            value={intensity}
-            onChange={setIntensity}
-          />
+          <View style={styles.field}>
+            <View style={styles.intensityGrid}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.intensityOption,
+                    {
+                      backgroundColor: intensity === level ? getBadgeColor() : 'transparent',
+                      borderRadius: theme.radius.sm,
+                      borderWidth: 1.5,
+                      borderColor: intensity === level ? getBadgeColor() : theme.colors.rsBorder,
+                    },
+                  ]}
+                  onPress={() => { setIntensity(level); trackChange(); }}
+                  activeOpacity={0.7}
+                >
+                  <Text variant="Body" color={intensity === level ? theme.colors.rsBg : theme.colors.rsText} style={styles.intensityText}>
+                    {level}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.sliderLabels}>
+              <Text variant="Caption" color={theme.colors.rsTextDim}>Mild</Text>
+              <Text variant="Caption" color={theme.colors.rsTextDim}>Severe</Text>
+            </View>
+          </View>
         </View>
 
-        {/* Location Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Text variant="Title" style={styles.sectionTitle}>
-            📍 Location
-          </Text>
-
+        {/* Location */}
+        <View style={[styles.section, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.sectionHeader}>
+            <Feather name="map-pin" size={20} color={theme.colors.rsPrimary} />
+            <Text variant="Title">Pain Location</Text>
+          </View>
           <View style={styles.chipsContainer}>
             {locationOptions.map((loc) => (
               <TouchableOpacity
@@ -342,19 +446,16 @@ export const LogHeadacheScreen: React.FC = () => {
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: location.includes(loc)
-                      ? theme.colors.rsPrimary
-                      : theme.colors.rsBg,
-                    borderColor: theme.colors.rsBorder,
+                    backgroundColor: location.includes(loc) ? theme.colors.rsPrimary : 'transparent',
+                    borderColor: location.includes(loc) ? theme.colors.rsPrimary : theme.colors.rsBorder,
                     borderRadius: theme.radius.pill,
+                    borderWidth: 1.5,
                   },
                 ]}
                 onPress={() => toggleLocation(loc)}
+                activeOpacity={0.7}
               >
-                <Text
-                  variant="Caption"
-                  color={location.includes(loc) ? theme.colors.rsBg : theme.colors.rsText}
-                >
+                <Text variant="Body" color={location.includes(loc) ? theme.colors.rsBg : theme.colors.rsText} style={styles.chipText}>
                   {loc}
                 </Text>
               </TouchableOpacity>
@@ -362,17 +463,12 @@ export const LogHeadacheScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Quality Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Text variant="Title" style={styles.sectionTitle}>
-            💫 Quality
-          </Text>
-
+        {/* Quality */}
+        <View style={[styles.section, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.sectionHeader}>
+            <Feather name="activity" size={20} color={theme.colors.rsPrimary} />
+            <Text variant="Title">Pain Quality</Text>
+          </View>
           <View style={styles.chipsContainer}>
             {qualityOptions.map((qual) => (
               <TouchableOpacity
@@ -380,19 +476,16 @@ export const LogHeadacheScreen: React.FC = () => {
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: quality.includes(qual)
-                      ? theme.colors.rsPrimary
-                      : theme.colors.rsBg,
-                    borderColor: theme.colors.rsBorder,
+                    backgroundColor: quality.includes(qual) ? theme.colors.rsPrimary : 'transparent',
+                    borderColor: quality.includes(qual) ? theme.colors.rsPrimary : theme.colors.rsBorder,
                     borderRadius: theme.radius.pill,
+                    borderWidth: 1.5,
                   },
                 ]}
                 onPress={() => toggleQuality(qual)}
+                activeOpacity={0.7}
               >
-                <Text
-                  variant="Caption"
-                  color={quality.includes(qual) ? theme.colors.rsBg : theme.colors.rsText}
-                >
+                <Text variant="Body" color={quality.includes(qual) ? theme.colors.rsBg : theme.colors.rsText} style={styles.chipText}>
                   {qual}
                 </Text>
               </TouchableOpacity>
@@ -400,17 +493,12 @@ export const LogHeadacheScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Triggers Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Text variant="Title" style={styles.sectionTitle}>
-            ⚠️ Possible Triggers
-          </Text>
-
+        {/* Triggers */}
+        <View style={[styles.section, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.sectionHeader}>
+            <Feather name="alert-triangle" size={20} color={theme.colors.rsPrimary} />
+            <Text variant="Title">Possible Triggers</Text>
+          </View>
           <View style={styles.chipsContainer}>
             {triggerOptions.map((trigger) => (
               <TouchableOpacity
@@ -418,19 +506,16 @@ export const LogHeadacheScreen: React.FC = () => {
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: triggers.includes(trigger)
-                      ? theme.colors.rsPrimary
-                      : theme.colors.rsBg,
-                    borderColor: theme.colors.rsBorder,
+                    backgroundColor: triggers.includes(trigger) ? theme.colors.rsWarn : 'transparent',
+                    borderColor: triggers.includes(trigger) ? theme.colors.rsWarn : theme.colors.rsBorder,
                     borderRadius: theme.radius.pill,
+                    borderWidth: 1.5,
                   },
                 ]}
                 onPress={() => toggleTrigger(trigger)}
+                activeOpacity={0.7}
               >
-                <Text
-                  variant="Caption"
-                  color={triggers.includes(trigger) ? theme.colors.rsBg : theme.colors.rsText}
-                >
+                <Text variant="Body" color={triggers.includes(trigger) ? theme.colors.rsBg : theme.colors.rsText} style={styles.chipText}>
                   {trigger}
                 </Text>
               </TouchableOpacity>
@@ -438,214 +523,195 @@ export const LogHeadacheScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Device Usage Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Text variant="Title" style={styles.sectionTitle}>
-            🎧 Device Usage
-          </Text>
-
-          <ToggleRow
-            label="Used Relief Device"
-            sublabel="Did you use the device during this episode?"
-            value={usedDevice}
-            onValueChange={setUsedDevice}
-          />
-
-          {usedDevice && (
-            <>
-              <View style={styles.divider} />
-
-              <View style={styles.fieldRow}>
-                <Text variant="Body" color={theme.colors.rsTextDim}>
-                  Mode: {deviceMode}
-                </Text>
-                <Text variant="Body" color={theme.colors.rsTextDim}>
-                  Duration: {deviceDuration} min
-                </Text>
-              </View>
-
-              <View style={styles.fieldRow}>
-                <Text variant="Body" color={theme.colors.rsTextDim}>
-                  Temp: {deviceTemp}°C
-                </Text>
-                <Text variant="Body" color={theme.colors.rsTextDim}>
-                  Pressure: {devicePressure}/10
-                </Text>
-                <Text variant="Body" color={theme.colors.rsTextDim}>
-                  Pattern: {devicePattern}
-                </Text>
-              </View>
-
-              <View style={styles.divider} />
-
-              <Text variant="Body" color={theme.colors.rsText} style={styles.effectivenessLabel}>
-                Effectiveness Rating
-              </Text>
-              <RatingBar value={deviceEffectiveness} onChange={setDeviceEffectiveness} />
-
-              <TextInput
-                style={[
-                  styles.notesInput,
-                  {
-                    backgroundColor: theme.colors.rsBg,
-                    color: theme.colors.rsText,
-                    borderColor: theme.colors.rsBorder,
-                    borderRadius: theme.radius.sm,
-                    fontSize: theme.textStyles.Caption.size,
-                  },
-                ]}
-                value={deviceNotes}
-                onChangeText={setDeviceNotes}
-                placeholder="Device session notes..."
-                placeholderTextColor={theme.colors.rsTextDim}
-                multiline
-                numberOfLines={2}
-              />
-            </>
-          )}
-        </View>
-
-        {/* Notes Section */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Text variant="Title" style={styles.sectionTitle}>
-            📝 Notes
-          </Text>
-
+        {/* Notes */}
+        <View style={[styles.section, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+          <View style={styles.sectionHeader}>
+            <Feather name="edit-3" size={20} color={theme.colors.rsPrimary} />
+            <Text variant="Title">Additional Notes</Text>
+          </View>
           <TextInput
-            style={[
-              styles.notesInput,
-              {
-                backgroundColor: theme.colors.rsBg,
-                color: theme.colors.rsText,
-                borderColor: theme.colors.rsBorder,
-                borderRadius: theme.radius.sm,
-                fontSize: theme.textStyles.Body.size,
-              },
-            ]}
+            style={[styles.notesInput, { backgroundColor: theme.colors.rsBg, color: theme.colors.rsText, borderColor: theme.colors.rsBorder, borderRadius: theme.radius.md }]}
             value={notes}
-            onChangeText={setNotes}
-            placeholder="Additional observations..."
+            onChangeText={(text) => { setNotes(text); trackChange(); }}
+            placeholder="Any observations or patterns you noticed..."
             placeholderTextColor={theme.colors.rsTextDim}
             multiline
             numberOfLines={4}
           />
         </View>
 
-        {/* Actions */}
-        <View style={styles.section}>
-          <CTAButton
-            variant="primary"
-            title={saving ? 'Saving...' : 'Save Episode'}
-            onPress={() => handleSave(false)}
-            fullWidth
-            disabled={saving}
-          />
+        {/* Save Buttons */}
+        <View style={styles.saveSection}>
+          <CTAButton variant="primary" title={saving ? 'Saving...' : 'Save Episode'} onPress={() => handleSave(false)} fullWidth disabled={saving} />
+          <CTAButton variant="primary" title="Save & Add Another" onPress={() => handleSave(true)} fullWidth disabled={saving} />
         </View>
 
-        <View style={styles.section}>
-          <CTAButton
-            variant="primary"
-            title="Save & Add Another"
-            onPress={() => handleSave(true)}
-            fullWidth
-            disabled={saving}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <CTAButton
-            variant="secondary"
-            title={habitLogAttached ? 'Habit Log Attached ✓' : "Attach Today's Habit Log"}
-            onPress={handleAttachHabitLog}
-            fullWidth
-          />
-        </View>
-
-        <View style={{ height: 20 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Date Picker Modal */}
+      {showDatePicker && (
+        <Modal visible={showDatePicker} transparent animationType="fade" onRequestClose={() => setShowDatePicker(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.pickerModal, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+              <View style={styles.pickerHeader}>
+                <Text variant="Title">Select Date</Text>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Feather name="x" size={24} color={theme.colors.rsText} />
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker value={startTime} mode="date" display="spinner" onChange={handleDateChange} textColor={theme.colors.rsText} />
+              <CTAButton variant="primary" title="Done" onPress={() => setShowDatePicker(false)} fullWidth />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Time Picker Modal */}
+      {showTimePicker && (
+        <Modal visible={showTimePicker} transparent animationType="fade" onRequestClose={() => setShowTimePicker(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.pickerModal, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+              <View style={styles.pickerHeader}>
+                <Text variant="Title">Select Time</Text>
+                <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                  <Feather name="x" size={24} color={theme.colors.rsText} />
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker value={startTime} mode="time" display="spinner" onChange={handleTimeChange} textColor={theme.colors.rsText} />
+              <CTAButton variant="primary" title="Done" onPress={() => setShowTimePicker(false)} fullWidth />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Today's Episodes Modal */}
+      <Modal visible={showHistoryModal} transparent animationType="slide" onRequestClose={() => setShowHistoryModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.historyModal, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
+            <View style={styles.historyHeader}>
+              <View>
+                <Text variant="H2">Today's Episodes</Text>
+                <Text variant="Caption" color={theme.colors.rsTextDim}>
+                  {todaysEpisodes.length} episode{todaysEpisodes.length !== 1 ? 's' : ''} logged
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowHistoryModal(false)}>
+                <Feather name="x" size={24} color={theme.colors.rsText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.episodesList}>
+  {todaysEpisodes
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+    .map((ep, index) => (
+      <TouchableOpacity
+        key={ep.id || index}
+        onPress={() => handleSelectEpisode(ep)}
+        activeOpacity={0.8}
+      >
+        <View
+          style={[
+            styles.episodeCard,
+            {
+              backgroundColor: theme.colors.rsBg,
+              borderRadius: theme.radius.md,
+              borderLeftWidth: 4,
+              borderLeftColor:
+                ep.intensity <= 3
+                  ? theme.colors.rsSecondary
+                  : ep.intensity <= 7
+                  ? theme.colors.rsWarn
+                  : theme.colors.rsAlert,
+            },
+          ]}
+        >
+          <View style={styles.episodeHeader}>
+            <Text variant="Title" color={theme.colors.rsText}>
+              Episode {index + 1}
+            </Text>
+            <Text variant="Caption" color={theme.colors.rsTextDim}>
+              {new Date(ep.startTime).toLocaleString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </Text>
+          </View>
+
+          <View style={styles.episodeDetails}>
+            <Text variant="Caption" color={theme.colors.rsTextDim}>Intensity: {ep.intensity}/10</Text>
+            <Text variant="Caption" color={theme.colors.rsTextDim}>Duration: {Math.round(ep.durationMin / 60)}h</Text>
+            {ep.location?.length > 0 && (
+              <Text variant="Caption" color={theme.colors.rsTextDim}>
+                Location: {ep.location.join(', ')}
+              </Text>
+            )}
+            {ep.usedDevice && (
+              <Text variant="Caption" color={theme.colors.rsSecondary}>
+                Device Used ({ep.deviceEffectiveness}/10)
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    ))}
+</ScrollView>
+
+
+
+            <View style={styles.historyFooter}>
+              <CTAButton variant="secondary" title="Close" onPress={() => setShowHistoryModal(false)} fullWidth />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    gap: 12,
-  },
-  section: {
-    gap: 12,
-  },
-  card: {
-    padding: 16,
-    gap: 16,
-  },
-  sectionTitle: {
-    marginBottom: -4,
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  dateTimeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  intensityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: -4,
-  },
-  badge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    fontWeight: '600',
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#27272F',
-  },
-  fieldRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  effectivenessLabel: {
-    marginBottom: -4,
-  },
-  notesInput: {
-    minHeight: 80,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    textAlignVertical: 'top',
-  },
+  container: { flex: 1 },
+  content: { padding: 20, gap: 16 },
+  header: { padding: 20 },
+  headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  headerTitle: { marginTop: 4 },
+  headerRight: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  historyButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12 },
+  historyCount: { fontWeight: '600' },
+  unsavedBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12 },
+  section: { padding: 20, gap: 20 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: -4 },
+  field: { gap: 12 },
+  fieldLabel: { fontWeight: '600' },
+  dateTimeGrid: { flexDirection: 'row', gap: 12 },
+  dateTimeCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderWidth: 1.5 },
+  dateTimeInfo: { flex: 1, gap: 4 },
+  dateTimeValue: { fontWeight: '600' },
+  durationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  durationOption: { flex: 1, minWidth: '12%', padding: 14, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
+  durationText: { fontWeight: '600' },
+  badge: { paddingHorizontal: 12, paddingVertical: 6 },
+  badgeText: { fontWeight: '600', fontSize: 11 },
+  intensityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  intensityOption: { width: '17%', padding: 12, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
+  intensityText: { fontWeight: '600' },
+  sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 },
+  chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 18, paddingVertical: 10 },
+  chipText: { fontWeight: '600' },
+  notesInput: { minHeight: 100, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, textAlignVertical: 'top' },
+  saveSection: { gap: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  pickerModal: { width: '100%', maxWidth: 400, padding: 24, gap: 20 },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  historyModal: { width: '100%', maxWidth: 440, maxHeight: '80%', padding: 24, gap: 20 },
+  historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  episodesList: { flex: 1 },
+  episodeCard: { padding: 16, marginBottom: 12, gap: 12 },
+  episodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  episodeDetails: { gap: 8 },
+  episodeDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  historyFooter: { paddingTop: 8 },
 });
