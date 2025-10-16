@@ -15,15 +15,12 @@ import { useTheme, Text, Screen } from '../theme';
 import { useEpisodesFirebaseStore } from '../store/episodes-firebase';
 import { useHabitsFirebaseStore } from '../store/habits-firebase';
 import { CTAButton } from '../components/CTAButton';
-import { getBarometricSnapshot } from '../lib/baro';
 import type { HeadacheLocation, HeadacheQuality, Trigger, HeadacheEpisode } from '../types/episode';
 
 export const LogHeadacheScreen: React.FC = () => {
   const theme = useTheme();
   const { addEpisode, getAllEpisodes } = useEpisodesFirebaseStore();
   const { getLogForDate } = useHabitsFirebaseStore();
-  // const [baroData, setBaroData] = useState<number | null>(null);
-
 
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -32,15 +29,6 @@ export const LogHeadacheScreen: React.FC = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [todaysEpisodes, setTodaysEpisodes] = useState<HeadacheEpisode[]>([]);
   const [selectedEpisode, setSelectedEpisode] = useState<HeadacheEpisode | null>(null);
-
-  
-
-  const getLocalDateString = (date: Date) => {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().split('T')[0]; // returns 'YYYY-MM-DD'
-  };
-
-
 
   const [startTime, setStartTime] = useState(new Date());
   const [durationHours, setDurationHours] = useState(2);
@@ -62,56 +50,58 @@ export const LogHeadacheScreen: React.FC = () => {
   const [baroData, setBaroData] = useState({ hPa: 1013, label: 'Neutral' });
   const [habitLogAttached, setHabitLogAttached] = useState(false);
 
+  const getLocalDateString = (date: Date) => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().split('T')[0];
+  };
+
   useEffect(() => {
     loadTodaysEpisodes();
-}, []);
-
-const handleSaveEpisode = async (episode: HeadacheEpisode) => {
-  await addEpisode(episode);
-  await loadTodaysEpisodes(); // refresh list
-};
-
+  }, [startTime]); // Reload when date changes
 
   const loadTodaysEpisodes = async () => {
-  try {
-    const allEpisodes = await getAllEpisodes();
+    try {
+      const allEpisodes = await getAllEpisodes();
+      console.log('All episodes:', allEpisodes?.length || 0);
+      
+      // Get start and end of the selected day (not necessarily today)
+      const selectedDate = new Date(startTime);
+      const dayStart = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate(),
+        0, 0, 0, 0
+      );
+      const dayEnd = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate(),
+        23, 59, 59, 999
+      );
 
-    const now = new Date();
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0,
-      0,
-      0,
-      0
-    );
-    const todayEnd = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      23,
-      59,
-      59,
-      999
-    );
+      //console.log('Filtering for date:', selectedDate.toLocaleDateString());
+      //console.log('Day range:', dayStart, 'to', dayEnd);
 
-    // Filter all logs that happened today
-    const filtered = allEpisodes.filter((ep) => {
-      const epDate = new Date(ep.startTime);
-      return epDate >= todayStart && epDate <= todayEnd;
-    });
+      // Filter episodes for the selected day
+      const filtered = allEpisodes.filter((ep) => {
+        const epDate = new Date(ep.startTime);
+        const isInRange = epDate >= dayStart && epDate <= dayEnd;
+        // if (isInRange) {
+        //   console.log('Found episode:', ep);
+        // }
+        return isInRange;
+      });
 
-    // Sort by newest first
-    filtered.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+      //console.log('Filtered episodes:', filtered.length);
 
-    setTodaysEpisodes(filtered);
-  } catch (err) {
-    console.error('Error loading today’s logs:', err);
-  }
-};
+      // Sort by newest first
+      filtered.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
-
+      setTodaysEpisodes(filtered);
+    } catch (err) {
+      console.error('Error loading episodes:', err);
+    }
+  };
 
   const getIntensityBadge = () => {
     if (intensity <= 3) return 'Mild';
@@ -160,17 +150,18 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
 
   const resetForm = () => {
     setStartTime(new Date());
-    setDurationHours(2);
-    setIntensity(5);
+    setDurationHours(1);
+    setIntensity(1);
     setLocation([]);
     setQuality([]);
     setTriggers([]);
     setNotes('');
     setUsedDevice(false);
-    setDeviceEffectiveness(5);
+    setDeviceEffectiveness(1);
     setDeviceNotes('');
     setHabitLogAttached(false);
     setHasUnsavedChanges(false);
+    setSelectedEpisode(null);
   };
 
   const handleSave = async (addAnother: boolean = false) => {
@@ -179,11 +170,18 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
       return;
     }
 
+    // Prevent logging future dates
+    const now = new Date();
+    if (startTime > now) {
+      Alert.alert('Invalid Date', 'You cannot log episodes for future dates.');
+      return;
+    }
+
     setSaving(true);
     try {
       const episode: any = {
         startTime: startTime.toISOString(),
-        durationMin: durationHours * 60, // Convert hours to minutes
+        durationMin: durationHours * 60,
         intensity,
         location,
         quality,
@@ -211,7 +209,7 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
       }
 
       await addEpisode(episode);
-      loadTodaysEpisodes();
+      await loadTodaysEpisodes();
 
       Alert.alert('Success', 'Headache episode saved successfully!', [
         {
@@ -219,6 +217,8 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
           onPress: () => {
             if (addAnother) {
               resetForm();
+            } else {
+              setHasUnsavedChanges(false);
             }
           },
         },
@@ -237,41 +237,82 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
     }
     
     if (selectedDate) {
+      // Prevent selecting future dates
+      const now = new Date();
+      if (selectedDate > now) {
+        Alert.alert('Invalid Date', 'You cannot select a future date.');
+        return;
+      }
+
       const newDate = new Date(startTime);
       newDate.setFullYear(selectedDate.getFullYear());
       newDate.setMonth(selectedDate.getMonth());
       newDate.setDate(selectedDate.getDate());
+      
+      // Check if date actually changed
+      const dateChanged = 
+        startTime.getDate() !== selectedDate.getDate() ||
+        startTime.getMonth() !== selectedDate.getMonth() ||
+        startTime.getFullYear() !== selectedDate.getFullYear();
+      
       setStartTime(newDate);
-      trackChange();
+      
+      // Reset form to defaults when date changes
+      if (dateChanged) {
+        setDurationHours(1);
+        setIntensity(1);
+        setLocation([]);
+        setQuality([]);
+        setTriggers([]);
+        setNotes('');
+        setUsedDevice(false);
+        setDeviceMode('Tension');
+        setDeviceDuration(20);
+        setDeviceTemp(30);
+        setDevicePressure(1);
+        setDevicePattern('Wave');
+        setDeviceEffectiveness(1);
+        setDeviceNotes('');
+        setHabitLogAttached(false);
+        setSelectedEpisode(null);
+        setHasUnsavedChanges(false);
+      } else {
+        trackChange();
+      }
     }
   };
 
   const handleSelectEpisode = (episode: HeadacheEpisode) => {
-  setSelectedEpisode(episode);
-  setShowHistoryModal(false);
+    setSelectedEpisode(episode);
+    setShowHistoryModal(false);
 
-  // Populate all form fields from the selected log
-  setStartTime(new Date(episode.startTime));
-  setDurationHours(episode.durationMin ? episode.durationMin / 60 : 2);
-  setIntensity(episode.intensity);
-  setLocation(episode.location || []);
-  setQuality(episode.quality || []);
-  setTriggers(episode.triggers || []);
-  setUsedDevice(!!episode.usedDevice);
-  setDeviceMode(episode.deviceMode || 'Tension');
-  setDeviceDuration(episode.deviceDuration || 20);
-  setDeviceTemp(episode.deviceTemp || 30);
-  setDevicePressure(episode.devicePressure || 5);
-  setDevicePattern(episode.devicePattern || 'Wave');
-  setDeviceEffectiveness(episode.deviceEffectiveness || 5);
-  setDeviceNotes(episode.deviceNotes || '');
-  setNotes(episode.notes || '');
-  setHabitLogAttached(!!episode.habitLogAttached);
+    // Populate all form fields from the selected log
+    setStartTime(new Date(episode.startTime));
+    setDurationHours(episode.durationMin ? episode.durationMin / 60 : 2);
+    setIntensity(episode.intensity);
+    setLocation(episode.location || []);
+    setQuality(episode.quality || []);
+    setTriggers(episode.triggers || []);
+    setUsedDevice(!!episode.usedDevice);
+    setDeviceMode(episode.deviceMode || 'Tension');
+    setDeviceDuration(episode.deviceDuration || 20);
+    setDeviceTemp(episode.deviceTemp || 30);
+    setDevicePressure(episode.devicePressure || 5);
+    setDevicePattern(episode.devicePattern || 'Wave');
+    setDeviceEffectiveness(episode.deviceEffectiveness || 5);
+    setDeviceNotes(episode.deviceNotes || '');
+    setNotes(episode.notes || '');
+    setHabitLogAttached(!!episode.habitLogAttached);
 
-  setHasUnsavedChanges(false);
-};
+    setHasUnsavedChanges(false);
 
-
+    // Show success message
+    Alert.alert(
+      'Episode Loaded',
+      'The form has been populated with data from this episode. You can review or edit it.',
+      [{ text: 'OK' }]
+    );
+  };
 
   const handleTimeChange = (event: any, selectedTime?: Date) => {
     if (Platform.OS === 'android') {
@@ -282,19 +323,32 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
       const newTime = new Date(startTime);
       newTime.setHours(selectedTime.getHours());
       newTime.setMinutes(selectedTime.getMinutes());
+      
+      // Prevent selecting future times
+      const now = new Date();
+      if (newTime > now) {
+        Alert.alert('Invalid Time', 'You cannot select a future time.');
+        return;
+      }
+      
       setStartTime(newTime);
       trackChange();
     }
   };
 
-  const formatEpisodeTime = (isoString: string) => {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  };
-
   const locationOptions: HeadacheLocation[] = ['Frontal', 'Temporal', 'Occipital', 'Diffuse', 'One-sided'];
   const qualityOptions: HeadacheQuality[] = ['Throbbing', 'Pressure', 'Sharp', 'Dull', 'Aura'];
   const triggerOptions: Trigger[] = ['Sugar', 'Caffeine', 'Starch', 'Dairy', 'Skipped meal', 'Stress', 'Sleep loss', 'Barometric', 'Dehydration', 'Hormonal', 'Screen time', 'Other'];
+
+  // Check if selected date is today
+  const isToday = () => {
+    const today = new Date();
+    return (
+      startTime.getDate() === today.getDate() &&
+      startTime.getMonth() === today.getMonth() &&
+      startTime.getFullYear() === today.getFullYear()
+    );
+  };
 
   return (
     <Screen>
@@ -303,21 +357,23 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
         <View style={[styles.header, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
           <View style={styles.headerContent}>
             <View style={{ flex: 1 }}>
-              <Text variant="Caption" color={theme.colors.rsTextDim}>Recording Episode</Text>
+              <Text variant="Caption" color={theme.colors.rsTextDim}>
+                {isToday() ? 'Recording Episode' : 'Recording Past Episode'}
+              </Text>
               <Text variant="H2" style={styles.headerTitle}>Log Headache</Text>
             </View>
             <View style={styles.headerRight}>
               {todaysEpisodes.length > 0 && (
-  <TouchableOpacity
-    style={[styles.historyButton, { backgroundColor: theme.colors.rsBg, borderRadius: theme.radius.md }]}
-    onPress={() => setShowHistoryModal(true)}
-  >
-    <Feather name="list" size={18} color={theme.colors.rsPrimary} />
-    <Text variant="Caption" color={theme.colors.rsPrimary} style={styles.historyCount}>
-      {todaysEpisodes.length}
-    </Text>
-  </TouchableOpacity>
-)}
+                <TouchableOpacity
+                  style={[styles.historyButton, { backgroundColor: theme.colors.rsBg, borderRadius: theme.radius.md }]}
+                  onPress={() => setShowHistoryModal(true)}
+                >
+                  <Feather name="list" size={18} color={theme.colors.rsPrimary} />
+                  <Text variant="Caption" color={theme.colors.rsPrimary} style={styles.historyCount}>
+                    {todaysEpisodes.length}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {hasUnsavedChanges && (
                 <View style={[styles.unsavedBadge, { backgroundColor: theme.colors.rsWarn + '20' }]}>
@@ -385,7 +441,7 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
                   activeOpacity={0.7}
                 >
                   <Text variant="Body" color={durationHours === hours ? theme.colors.rsBg : theme.colors.rsText} style={styles.durationText}>
-                    {hours}h
+                    {hours < 1 ? `${hours * 60}m` : `${hours}h`}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -560,7 +616,14 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
                   <Feather name="x" size={24} color={theme.colors.rsText} />
                 </TouchableOpacity>
               </View>
-              <DateTimePicker value={startTime} mode="date" display="spinner" onChange={handleDateChange} textColor={theme.colors.rsText} />
+              <DateTimePicker 
+                value={startTime} 
+                mode="date" 
+                display="spinner" 
+                onChange={handleDateChange} 
+                textColor={theme.colors.rsText}
+                maximumDate={new Date()} // Prevent future dates
+              />
               <CTAButton variant="primary" title="Done" onPress={() => setShowDatePicker(false)} fullWidth />
             </View>
           </View>
@@ -578,90 +641,132 @@ const handleSaveEpisode = async (episode: HeadacheEpisode) => {
                   <Feather name="x" size={24} color={theme.colors.rsText} />
                 </TouchableOpacity>
               </View>
-              <DateTimePicker value={startTime} mode="time" display="spinner" onChange={handleTimeChange} textColor={theme.colors.rsText} />
+              <DateTimePicker 
+                value={startTime} 
+                mode="time" 
+                display="spinner" 
+                onChange={handleTimeChange} 
+                textColor={theme.colors.rsText}
+              />
               <CTAButton variant="primary" title="Done" onPress={() => setShowTimePicker(false)} fullWidth />
             </View>
           </View>
         </Modal>
       )}
 
-      {/* Today's Episodes Modal */}
+      {/* Episodes History Modal */}
       <Modal visible={showHistoryModal} transparent animationType="slide" onRequestClose={() => setShowHistoryModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.historyModal, { backgroundColor: theme.colors.rsSurface, borderRadius: theme.radius.lg }]}>
-            <View style={styles.historyHeader}>
-              <View>
-                <Text variant="H2">Today's Episodes</Text>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <View style={{ flex: 1 }}>
+                <Text variant="H2">
+                  {isToday() ? "Today's Episodes" : "Episodes for " + startTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
                 <Text variant="Caption" color={theme.colors.rsTextDim}>
                   {todaysEpisodes.length} episode{todaysEpisodes.length !== 1 ? 's' : ''} logged
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowHistoryModal(false)}>
+              <TouchableOpacity onPress={() => setShowHistoryModal(false)} style={{ padding: 4 }}>
                 <Feather name="x" size={24} color={theme.colors.rsText} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.episodesList}>
-  {todaysEpisodes
-    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-    .map((ep, index) => (
-      <TouchableOpacity
-        key={ep.id || index}
-        onPress={() => handleSelectEpisode(ep)}
-        activeOpacity={0.8}
-      >
-        <View
-          style={[
-            styles.episodeCard,
-            {
-              backgroundColor: theme.colors.rsBg,
-              borderRadius: theme.radius.md,
-              borderLeftWidth: 4,
-              borderLeftColor:
-                ep.intensity <= 3
-                  ? theme.colors.rsSecondary
-                  : ep.intensity <= 7
-                  ? theme.colors.rsWarn
-                  : theme.colors.rsAlert,
-            },
-          ]}
-        >
-          <View style={styles.episodeHeader}>
-            <Text variant="Title" color={theme.colors.rsText}>
-              Episode {index + 1}
-            </Text>
-            <Text variant="Caption" color={theme.colors.rsTextDim}>
-              {new Date(ep.startTime).toLocaleString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                month: 'short',
-                day: 'numeric',
-              })}
-            </Text>
-          </View>
+            {/* Content */}
+            {todaysEpisodes.length === 0 ? (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="inbox" size={48} color={theme.colors.rsTextDim} />
+                <Text variant="Body" color={theme.colors.rsTextDim} style={{ marginTop: 12, textAlign: 'center' }}>
+                  No episodes logged for this date
+                </Text>
+              </View>
+            ) : (
+              <ScrollView 
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 16 }}
+                showsVerticalScrollIndicator={true}
+              >
+                {todaysEpisodes.map((ep, index) => {
+                  //console.log('Rendering episode:', index, ep.id);
+                  return (
+                    <TouchableOpacity
+                      key={ep.id || `episode-${index}`}
+                      onPress={() => handleSelectEpisode(ep)}
+                      activeOpacity={0.7}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <View
+                        style={{
+                          backgroundColor: theme.colors.rsBg,
+                          borderRadius: theme.radius.md,
+                          borderLeftWidth: 4,
+                          borderLeftColor:
+                            ep.intensity <= 3
+                              ? theme.colors.rsSecondary
+                              : ep.intensity <= 7
+                              ? theme.colors.rsWarn
+                              : theme.colors.rsAlert,
+                          padding: 16,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                          <Text variant="Title" color={theme.colors.rsText}>
+                            Episode {todaysEpisodes.length - index}
+                          </Text>
+                          <Text variant="Caption" color={theme.colors.rsTextDim}>
+                            {new Date(ep.startTime).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Text>
+                        </View>
 
-          <View style={styles.episodeDetails}>
-            <Text variant="Caption" color={theme.colors.rsTextDim}>Intensity: {ep.intensity}/10</Text>
-            <Text variant="Caption" color={theme.colors.rsTextDim}>Duration: {Math.round(ep.durationMin / 60)}h</Text>
-            {ep.location?.length > 0 && (
-              <Text variant="Caption" color={theme.colors.rsTextDim}>
-                Location: {ep.location.join(', ')}
-              </Text>
+                        <View style={{ gap: 6 }}>
+                          <Text variant="Body" color={theme.colors.rsText}>
+                            Intensity: {ep.intensity}/10 • Duration: {Math.round((ep.durationMin || 0) / 60)}h
+                          </Text>
+                          {ep.location && ep.location.length > 0 && (
+                            <Text variant="Caption" color={theme.colors.rsTextDim}>
+                              {ep.location.join(', ')}
+                            </Text>
+                          )}
+                          {ep.quality && ep.quality.length > 0 && (
+                            <Text variant="Caption" color={theme.colors.rsTextDim}>
+                              {ep.quality.join(', ')}
+                            </Text>
+                          )}
+                          {ep.triggers && ep.triggers.length > 0 && (
+                            <Text variant="Caption" color={theme.colors.rsTextDim}>
+                              {ep.triggers.join(', ')}
+                            </Text>
+                          )}
+                          {ep.usedDevice && (
+                            <Text variant="Caption" color={theme.colors.rsSecondary}>
+                             Device Used (Effectiveness: {ep.deviceEffectiveness}/10)
+                            </Text>
+                          )}
+                          {ep.notes && (
+                            <Text variant="Caption" color={theme.colors.rsTextDim} numberOfLines={2}>
+                              {ep.notes}
+                            </Text>
+                          )}
+                        </View>
+
+                        <View style={{ paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.colors.rsBorder, marginTop: 12 }}>
+                          <Text variant="Caption" color={theme.colors.rsPrimary} style={{ fontWeight: '600' }}>
+                            Tap to view full details →
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             )}
-            {ep.usedDevice && (
-              <Text variant="Caption" color={theme.colors.rsSecondary}>
-                Device Used ({ep.deviceEffectiveness}/10)
-              </Text>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    ))}
-</ScrollView>
 
-
-
-            <View style={styles.historyFooter}>
+            {/* Footer */}
+            <View style={{ paddingTop: 16 }}>
               <CTAButton variant="secondary" title="Close" onPress={() => setShowHistoryModal(false)} fullWidth />
             </View>
           </View>
@@ -689,8 +794,8 @@ const styles = StyleSheet.create({
   dateTimeCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderWidth: 1.5 },
   dateTimeInfo: { flex: 1, gap: 4 },
   dateTimeValue: { fontWeight: '600' },
-  durationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  durationOption: { flex: 1, minWidth: '12%', padding: 14, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
+  durationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  durationOption: { width: '13.5%', padding: 14, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
   durationText: { fontWeight: '600' },
   badge: { paddingHorizontal: 12, paddingVertical: 6 },
   badgeText: { fontWeight: '600', fontSize: 11 },
@@ -706,12 +811,14 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   pickerModal: { width: '100%', maxWidth: 400, padding: 24, gap: 20 },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  historyModal: { width: '100%', maxWidth: 440, maxHeight: '80%', padding: 24, gap: 20 },
+  historyModal: { width: '90%', maxWidth: 440, height: '70%', padding: 24 },
   historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  episodesList: { flex: 1 },
-  episodeCard: { padding: 16, marginBottom: 12, gap: 12 },
+  episodesList: { flex: 1, marginVertical: 12 },
+  episodesListContent: { gap: 12, paddingBottom: 8 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  episodeCard: { padding: 16, gap: 12 },
   episodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   episodeDetails: { gap: 8 },
-  episodeDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  episodeFooter: { paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', marginTop: 4 },
   historyFooter: { paddingTop: 8 },
 });

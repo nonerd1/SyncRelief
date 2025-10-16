@@ -21,7 +21,7 @@ export function LoginScreen({ navigation }: any) {
     setIsLoading(true);
     try {
       await login(email, password);
-      navigation.replace('Home');
+      //navigation.replace('Home');
     } catch (error: any) {
       Alert.alert('Login Failed', error.message);
     } finally {
