@@ -25,6 +25,7 @@ export const LogHeadacheScreen: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [tempTime, setTempTime] = useState(new Date());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [todaysEpisodes, setTodaysEpisodes] = useState<HeadacheEpisode[]>([]);
@@ -79,20 +80,20 @@ export const LogHeadacheScreen: React.FC = () => {
         23, 59, 59, 999
       );
 
-      //console.log('Filtering for date:', selectedDate.toLocaleDateString());
-      //console.log('Day range:', dayStart, 'to', dayEnd);
+      console.log('Filtering for date:', selectedDate.toLocaleDateString());
+      console.log('Day range:', dayStart, 'to', dayEnd);
 
       // Filter episodes for the selected day
       const filtered = allEpisodes.filter((ep) => {
         const epDate = new Date(ep.startTime);
         const isInRange = epDate >= dayStart && epDate <= dayEnd;
-        // if (isInRange) {
-        //   console.log('Found episode:', ep);
-        // }
+        if (isInRange) {
+          console.log('Found episode:', ep);
+        }
         return isInRange;
       });
 
-      //console.log('Filtered episodes:', filtered.length);
+      console.log('Filtered episodes:', filtered.length);
 
       // Sort by newest first
       filtered.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
@@ -150,18 +151,62 @@ export const LogHeadacheScreen: React.FC = () => {
 
   const resetForm = () => {
     setStartTime(new Date());
-    setDurationHours(1);
-    setIntensity(1);
+    setDurationHours(2);
+    setIntensity(5);
     setLocation([]);
     setQuality([]);
     setTriggers([]);
     setNotes('');
     setUsedDevice(false);
-    setDeviceEffectiveness(1);
+    setDeviceEffectiveness(5);
     setDeviceNotes('');
     setHabitLogAttached(false);
     setHasUnsavedChanges(false);
     setSelectedEpisode(null);
+  };
+
+  const checkForDuplicates = (newStartTime: Date, newDurationMin: number): boolean => {
+    const newEndTime = new Date(newStartTime.getTime() + newDurationMin * 60000);
+    
+    // Get the date string for the new episode
+    const newDateStr = newStartTime.toISOString().split('T')[0];
+    
+    for (const episode of todaysEpisodes) {
+      // Skip if we're editing the same episode
+      if (selectedEpisode && episode.id === selectedEpisode.id) {
+        continue;
+      }
+      
+      const existingStart = new Date(episode.startTime);
+      const existingDateStr = existingStart.toISOString().split('T')[0];
+      
+      // Only check episodes on the same day
+      if (newDateStr !== existingDateStr) {
+        continue;
+      }
+      
+      const existingEnd = new Date(existingStart.getTime() + (episode.durationMin || 0) * 60000);
+      
+      // Check for overlap - episodes overlap if:
+      // 1. New starts before existing ends AND new ends after existing starts
+      const hasOverlap = newStartTime < existingEnd && newEndTime > existingStart;
+      
+      if (hasOverlap) {
+        const timeStr = existingStart.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        });
+        const durationHrs = Math.round((episode.durationMin || 0) / 60 * 10) / 10;
+        Alert.alert(
+          'Duplicate Episode Detected',
+          `An episode already exists at ${timeStr} (${durationHrs}h duration) that overlaps with this time range.\n\nPlease adjust the start time or duration.`,
+          [{ text: 'OK' }]
+        );
+        return true;
+      }
+    }
+    
+    return false;
   };
 
   const handleSave = async (addAnother: boolean = false) => {
@@ -174,6 +219,12 @@ export const LogHeadacheScreen: React.FC = () => {
     const now = new Date();
     if (startTime > now) {
       Alert.alert('Invalid Date', 'You cannot log episodes for future dates.');
+      return;
+    }
+
+    // Check for duplicate/overlapping episodes
+    const durationMin = durationHours * 60;
+    if (checkForDuplicates(startTime, durationMin)) {
       return;
     }
 
@@ -244,23 +295,24 @@ export const LogHeadacheScreen: React.FC = () => {
         return;
       }
 
-      const newDate = new Date(startTime);
-      newDate.setFullYear(selectedDate.getFullYear());
-      newDate.setMonth(selectedDate.getMonth());
-      newDate.setDate(selectedDate.getDate());
-      
       // Check if date actually changed
       const dateChanged = 
         startTime.getDate() !== selectedDate.getDate() ||
         startTime.getMonth() !== selectedDate.getMonth() ||
         startTime.getFullYear() !== selectedDate.getFullYear();
       
+      // Update the date while keeping the current time
+      const newDate = new Date(startTime);
+      newDate.setFullYear(selectedDate.getFullYear());
+      newDate.setMonth(selectedDate.getMonth());
+      newDate.setDate(selectedDate.getDate());
+      
       setStartTime(newDate);
       
-      // Reset form to defaults when date changes
+      // Only reset form fields when date changes, NOT the time
       if (dateChanged) {
-        setDurationHours(1);
-        setIntensity(1);
+        setDurationHours(2);
+        setIntensity(5);
         setLocation([]);
         setQuality([]);
         setTriggers([]);
@@ -269,9 +321,9 @@ export const LogHeadacheScreen: React.FC = () => {
         setDeviceMode('Tension');
         setDeviceDuration(20);
         setDeviceTemp(30);
-        setDevicePressure(1);
+        setDevicePressure(5);
         setDevicePattern('Wave');
-        setDeviceEffectiveness(1);
+        setDeviceEffectiveness(5);
         setDeviceNotes('');
         setHabitLogAttached(false);
         setSelectedEpisode(null);
@@ -320,20 +372,28 @@ export const LogHeadacheScreen: React.FC = () => {
     }
     
     if (selectedTime) {
-      const newTime = new Date(startTime);
-      newTime.setHours(selectedTime.getHours());
-      newTime.setMinutes(selectedTime.getMinutes());
-      
-      // Prevent selecting future times
-      const now = new Date();
-      if (newTime > now) {
-        Alert.alert('Invalid Time', 'You cannot select a future time.');
-        return;
-      }
-      
-      setStartTime(newTime);
-      trackChange();
+      setTempTime(selectedTime);
     }
+  };
+
+  const handleTimePickerDone = () => {
+    const newTime = new Date(startTime);
+    newTime.setHours(tempTime.getHours());
+    newTime.setMinutes(tempTime.getMinutes());
+    newTime.setSeconds(0);
+    newTime.setMilliseconds(0);
+    
+    // Prevent selecting future times
+    const now = new Date();
+    if (newTime > now) {
+      Alert.alert('Invalid Time', 'You cannot select a future time.');
+      setShowTimePicker(false);
+      return;
+    }
+    
+    setStartTime(newTime);
+    setShowTimePicker(false);
+    trackChange();
   };
 
   const locationOptions: HeadacheLocation[] = ['Frontal', 'Temporal', 'Occipital', 'Diffuse', 'One-sided'];
@@ -408,7 +468,10 @@ export const LogHeadacheScreen: React.FC = () => {
 
             <TouchableOpacity
               style={[styles.dateTimeCard, { backgroundColor: theme.colors.rsBg, borderColor: theme.colors.rsBorder, borderRadius: theme.radius.md }]}
-              onPress={() => setShowTimePicker(true)}
+              onPress={() => {
+                setTempTime(new Date(startTime));
+                setShowTimePicker(true);
+              }}
             >
               <Feather name="clock" size={18} color={theme.colors.rsTextDim} />
               <View style={styles.dateTimeInfo}>
@@ -642,13 +705,14 @@ export const LogHeadacheScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
               <DateTimePicker 
-                value={startTime} 
+                value={tempTime} 
                 mode="time" 
                 display="spinner" 
                 onChange={handleTimeChange} 
                 textColor={theme.colors.rsText}
+                is24Hour={false}
               />
-              <CTAButton variant="primary" title="Done" onPress={() => setShowTimePicker(false)} fullWidth />
+              <CTAButton variant="primary" title="Done" onPress={handleTimePickerDone} fullWidth />
             </View>
           </View>
         </Modal>
@@ -688,7 +752,7 @@ export const LogHeadacheScreen: React.FC = () => {
                 showsVerticalScrollIndicator={true}
               >
                 {todaysEpisodes.map((ep, index) => {
-                  //console.log('Rendering episode:', index, ep.id);
+                  console.log('Rendering episode:', index, ep.id);
                   return (
                     <TouchableOpacity
                       key={ep.id || `episode-${index}`}
@@ -728,27 +792,27 @@ export const LogHeadacheScreen: React.FC = () => {
                           </Text>
                           {ep.location && ep.location.length > 0 && (
                             <Text variant="Caption" color={theme.colors.rsTextDim}>
-                              {ep.location.join(', ')}
+                              📍 {ep.location.join(', ')}
                             </Text>
                           )}
                           {ep.quality && ep.quality.length > 0 && (
                             <Text variant="Caption" color={theme.colors.rsTextDim}>
-                              {ep.quality.join(', ')}
+                              💫 {ep.quality.join(', ')}
                             </Text>
                           )}
                           {ep.triggers && ep.triggers.length > 0 && (
                             <Text variant="Caption" color={theme.colors.rsTextDim}>
-                              {ep.triggers.join(', ')}
+                              ⚠️ {ep.triggers.join(', ')}
                             </Text>
                           )}
                           {ep.usedDevice && (
                             <Text variant="Caption" color={theme.colors.rsSecondary}>
-                             Device Used (Effectiveness: {ep.deviceEffectiveness}/10)
+                              🔧 Device Used (Effectiveness: {ep.deviceEffectiveness}/10)
                             </Text>
                           )}
                           {ep.notes && (
                             <Text variant="Caption" color={theme.colors.rsTextDim} numberOfLines={2}>
-                              {ep.notes}
+                              💭 {ep.notes}
                             </Text>
                           )}
                         </View>
