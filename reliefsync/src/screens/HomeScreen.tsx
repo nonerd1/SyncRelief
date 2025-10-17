@@ -233,7 +233,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
+    paddingTop: 60,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     gap: 12,
   },
   header: {

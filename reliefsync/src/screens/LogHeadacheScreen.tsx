@@ -842,7 +842,7 @@ export const LogHeadacheScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 20, gap: 16 },
+  content: { paddingTop: 12, paddingHorizontal: 20, paddingBottom: 20, gap: 16 },
   header: { padding: 20 },
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitle: { marginTop: 4 },
@@ -858,9 +858,16 @@ const styles = StyleSheet.create({
   dateTimeCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderWidth: 1.5 },
   dateTimeInfo: { flex: 1, gap: 4 },
   dateTimeValue: { fontWeight: '600' },
-  durationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  durationOption: { width: '13.5%', padding: 14, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
-  durationText: { fontWeight: '600' },
+  durationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  durationOption: { 
+    minWidth: 60,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+  durationText: { fontWeight: '600', fontSize: 15 },
   badge: { paddingHorizontal: 12, paddingVertical: 6 },
   badgeText: { fontWeight: '600', fontSize: 11 },
   intensityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

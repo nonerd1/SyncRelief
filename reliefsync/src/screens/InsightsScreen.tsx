@@ -444,9 +444,9 @@ export const InsightsScreen: React.FC = () => {
   };
 
   const getTrendIcon = () => {
-    if (trend === 'improving') return '📈';
-    if (trend === 'worsening') return '📉';
-    return '➡️';
+    if (trend === 'improving') return '↑';
+    if (trend === 'worsening') return '↓';
+    return '→';
   };
 
   const getRiskColor = (risk: 'high' | 'medium' | 'low') => {
@@ -490,7 +490,7 @@ export const InsightsScreen: React.FC = () => {
             ]}
           >
             <View style={styles.predictionHeader}>
-              <Text variant="Title">🔮 Risk Assessment</Text>
+              <Text variant="Title">Risk Assessment</Text>
               <View style={[styles.riskBadge, { backgroundColor: getRiskColor(predictiveInsight.risk), borderRadius: theme.radius.pill }]}>
                 <Text variant="Caption" color={theme.colors.rsBg} style={{ fontWeight: '700' }}>
                   {predictiveInsight.risk.toUpperCase()}
@@ -512,7 +512,7 @@ export const InsightsScreen: React.FC = () => {
 
             <View style={[styles.recommendationBox, { backgroundColor: theme.colors.rsBg, borderRadius: theme.radius.md, marginTop: 12 }]}>
               <Text variant="Caption" color={theme.colors.rsText}>
-                💡 {predictiveInsight.recommendation}
+                {predictiveInsight.recommendation}
               </Text>
             </View>
           </TouchableOpacity>
@@ -527,7 +527,7 @@ export const InsightsScreen: React.FC = () => {
           onPress={() => setShowMonthlyModal(true)}
         >
           <View style={styles.chartHeader}>
-            <Text variant="Title">📊 Last 7 Days</Text>
+            <Text variant="Title">Last 7 Days</Text>
             <Text variant="Caption" color={theme.colors.rsTextDim}>
               Tap for monthly
             </Text>
@@ -608,7 +608,6 @@ export const InsightsScreen: React.FC = () => {
             </>
           ) : (
             <View style={styles.emptyStateContainer}>
-              <Text variant="H2" style={{ fontSize: 48 }}>📊</Text>
               <Text variant="Body" color={theme.colors.rsText} style={{ marginTop: 12, textAlign: 'center', fontWeight: '600' }}>
                 No Episodes Logged Yet
               </Text>
@@ -636,7 +635,7 @@ export const InsightsScreen: React.FC = () => {
             ]}
           >
             <Text variant="Title" style={styles.sectionTitle}>
-              🧠 Detected Patterns
+              Detected Patterns
             </Text>
 
             {patterns.map((pattern, index) => (
@@ -686,7 +685,7 @@ export const InsightsScreen: React.FC = () => {
             ]}
           >
             <Text variant="Title" style={styles.sectionTitle}>
-              ⚡️ Trigger Analysis
+              Trigger Analysis
             </Text>
 
             {topTriggers.map((trigger, index) => (
@@ -943,7 +942,7 @@ export const InsightsScreen: React.FC = () => {
                   ]}
                 >
                   <Text variant="Body" color={theme.colors.rsText}>
-                    💡 This trigger has a correlation score of {selectedTrigger.correlationScore}/100, 
+                    This trigger has a correlation score of {selectedTrigger.correlationScore}/100, 
                     indicating {selectedTrigger.correlationScore >= 70 ? 'strong' : selectedTrigger.correlationScore >= 50 ? 'moderate' : 'weak'} correlation 
                     with your episodes. Episodes with this trigger average {selectedTrigger.avgIntensity}/10 in intensity.
                   </Text>
@@ -1052,7 +1051,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
     gap: 16,
   },
   section: {

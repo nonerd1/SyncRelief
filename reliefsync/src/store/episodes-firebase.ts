@@ -49,16 +49,11 @@ export const useEpisodesFirebaseStore = create<EpisodesFirebaseState>((set, get)
     };
 
     try {
-      // Save to Firebase first
+      // Save to Firebase - the realtime listener will update local state automatically
       await saveHeadacheEpisode(user.uid, newEpisode);
-
-      // Update local state
-      set((state) => ({
-        episodes: [newEpisode, ...state.episodes],
-      }));
-
-      // Cache locally for offline support
-      await get().cacheLocally();
+      
+      // Note: We don't manually update local state here to avoid duplicates
+      // The Firebase listener (subscribeToUpdates) will handle the update
     } catch (error) {
       console.error('Failed to add episode:', error);
       throw error;
@@ -71,11 +66,11 @@ export const useEpisodesFirebaseStore = create<EpisodesFirebaseState>((set, get)
     if (!user) throw new Error('User not authenticated');
 
     try {
+      // Delete from Firebase - the realtime listener will update local state automatically
       await deleteHeadacheEpisode(user.uid, id);
-      set((state) => ({
-        episodes: state.episodes.filter((e) => e.id !== id),
-      }));
-      await get().cacheLocally();
+      
+      // Note: We don't manually update local state here to avoid sync issues
+      // The Firebase listener (subscribeToUpdates) will handle the update
     } catch (error) {
       console.error('Failed to delete episode:', error);
       throw error;

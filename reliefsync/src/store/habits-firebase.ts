@@ -62,15 +62,11 @@ export const useHabitsFirebaseStore = createHabits<HabitsFirebaseState>((set, ge
       // Remove undefined fields before saving to Firebase
       const cleanedLog = removeUndefined(newLog) as HabitLog;
       
-      // Save to Firebase
+      // Save to Firebase - the realtime listener will update local state automatically
       await saveHabitLog(user.uid, cleanedLog);
-
-      // Update local state - replace if same date exists
-      set((state) => ({
-        logs: [newLog, ...state.logs.filter((l) => l.date !== log.date)],
-      }));
-
-      await get().cacheLocally();
+      
+      // Note: We don't manually update local state here to avoid duplicates
+      // The Firebase listener (subscribeToUpdates) will handle the update
     } catch (error) {
       console.error('Failed to add habit log:', error);
       throw error;

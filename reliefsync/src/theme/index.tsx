@@ -44,7 +44,7 @@ interface ScreenProps extends ViewProps {
 
 export const Screen: React.FC<ScreenProps> = ({ children, style, ...props }) => {
   return (
-    <SafeAreaView style={[styles.screen, style]} edges={['top', 'left', 'right']} {...props}>
+    <SafeAreaView style={[styles.screen, style]} edges={['left', 'right']} {...props}>
       {children}
     </SafeAreaView>
   );
